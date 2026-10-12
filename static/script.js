@@ -1,5 +1,5 @@
 
-const POLL_INTERVAL = 5000; // Refresh display every 5 seconds
+const POLL_INTERVAL = 5000;
 
 let electricityChart = null;
 let waterChart = null;
@@ -8,7 +8,7 @@ let refreshInProgress = false;
 const $ = (id) => document.getElementById(id);
 
 function formatNumber(value, decimals = 1) {
-    return Number(value).toLocaleString("en-IN", {
+    return Number(value ?? 0).toLocaleString("en-IN", {
         maximumFractionDigits: decimals,
         minimumFractionDigits: decimals
     });
@@ -29,35 +29,161 @@ function makeElement(tag, className, text) {
 }
 
 function showEmpty(container, message) {
-    container.replaceChildren(makeElement("p", "muted", message));
+    container.replaceChildren(
+        makeElement("p", "alert-empty", message)
+    );
 }
 
-function renderAlerts(alerts) {
+function renderAlerts(alerts, activeCount) {
     const container = $("alertsList");
+    if (!container) return;
+
     container.replaceChildren();
 
-    $("alertTotal").textContent = alerts.length;
+    const activeStatuses = ["New", "Acknowledged"];
+
+    const calculatedActiveCount = alerts.filter(alert =>
+        activeStatuses.includes(alert.status)
+    ).length;
+
+    const totalActive = Number.isFinite(Number(activeCount))
+        ? Number(activeCount)
+        : calculatedActiveCount;
+
+    $("alertTotal").textContent = totalActive;
     $("alertBadge").textContent =
-        `${alerts.length} alert${alerts.length === 1 ? "" : "s"}`;
+        `${totalActive} active alert${totalActive === 1 ? "" : "s"}`;
 
     if (!alerts.length) {
-        showEmpty(container, "No potential issues detected in the current records.");
+        showEmpty(
+            container,
+            "No alerts recorded yet. EcoCampus is monitoring your resources."
+        );
         return;
     }
 
     alerts.slice(0, 50).forEach(alert => {
-        const item = makeElement("div", "alert-item");
+        const status = String(alert.status || "New");
+        const severity = String(alert.severity || "Medium");
+        const normalizedStatus = status.toLowerCase();
+        const normalizedSeverity = severity.toLowerCase();
+
+        const item = makeElement(
+            "article",
+            `alert-item severity-${normalizedSeverity} status-${normalizedStatus}`
+        );
+
         const details = makeElement("div");
-        const title = makeElement("strong", "", alert.classroom);
-        const description = makeElement(
+        const title = makeElement(
+            "strong",
+            "",
+            `${alert.classroom || "Unknown classroom"} · ${alert.resource || "Resource"}`
+        );
+
+        const badges = makeElement("div", "alert-badges");
+
+        badges.append(
+            makeElement(
+                "span",
+                `alert-badge severity-${normalizedSeverity}`,
+                `${severity} severity`
+            ),
+            makeElement(
+                "span",
+                `alert-badge status-${normalizedStatus}`,
+                status
+            )
+        );
+
+        const message = makeElement(
             "p",
             "",
-            `${alert.resource} · ${alert.recorded_at}`
+            alert.message || alert.alert_type || "Resource usage needs review."
         );
-        const warning = makeElement("span", "warning", alert.message);
 
-        details.append(title, description);
-        item.append(details, warning);
+        const amountText =
+            alert.amount !== undefined && alert.baseline !== undefined
+                ? `Recorded: ${formatNumber(alert.amount)} · Baseline: ${formatNumber(alert.baseline)}`
+                : "";
+
+        const measurements = makeElement("p", "muted", amountText);
+
+        const timestamp = makeElement(
+            "p",
+            "alert-timestamp",
+            `Detected: ${alert.detected_at || "Time unavailable"}`
+        );
+
+        details.append(title, badges, message);
+
+        if (amountText) {
+            details.append(measurements);
+        }
+
+        details.append(timestamp);
+
+        if (status === "Acknowledged" && alert.updated_at) {
+            details.append(
+                makeElement(
+                    "p",
+                    "alert-timestamp",
+                    `Last updated: ${alert.updated_at}`
+                )
+            );
+        }
+
+        if (status === "Resolved") {
+            details.append(
+                makeElement(
+                    "p",
+                    "alert-timestamp",
+                    `Resolved: ${alert.resolved_at || alert.updated_at || "Time unavailable"}`
+                )
+            );
+        }
+
+        item.append(details);
+
+        // Actions are available only for alerts that have an ID
+        // and have not already been resolved.
+        if (alert.id && status !== "Resolved") {
+            const actions = makeElement("div", "alert-actions");
+
+            if (status === "New") {
+                const acknowledgeForm = document.createElement("form");
+                acknowledgeForm.method = "POST";
+                acknowledgeForm.action =
+                    `/alerts/${encodeURIComponent(alert.id)}/acknowledge`;
+
+                const acknowledgeButton = makeElement(
+                    "button",
+                    "acknowledge-button",
+                    "✓ Acknowledge"
+                );
+
+                acknowledgeButton.type = "submit";
+                acknowledgeForm.append(acknowledgeButton);
+                actions.append(acknowledgeForm);
+            }
+
+            const resolveForm = document.createElement("form");
+            resolveForm.method = "POST";
+            resolveForm.action =
+                `/alerts/${encodeURIComponent(alert.id)}/resolve`;
+
+            const resolveButton = makeElement(
+                "button",
+                "resolve-button",
+                "✓ Resolve"
+            );
+
+            resolveButton.type = "submit";
+            resolveForm.append(resolveButton);
+            actions.append(resolveForm);
+
+            item.append(actions);
+        }
+
         container.append(item);
     });
 
@@ -74,6 +200,8 @@ function renderAlerts(alerts) {
 
 function renderInsights(insights) {
     const container = $("insightsList");
+    if (!container) return;
+
     container.replaceChildren();
 
     if (!insights.length) {
@@ -90,6 +218,8 @@ function renderInsights(insights) {
 
 function renderRecords(records) {
     const body = $("recordsBody");
+    if (!body) return;
+
     body.replaceChildren();
 
     $("recordCount").textContent =
@@ -97,12 +227,15 @@ function renderRecords(records) {
 
     records.slice(0, 100).forEach(record => {
         const row = document.createElement("tr");
-
-        const status = makeElement("td");
+        const statusCell = document.createElement("td");
         const statusWrapper = makeElement("div", "record-status");
 
-        if (record.alerts.length) {
-            record.alerts.forEach(message => {
+        const recordAlerts = Array.isArray(record.alerts)
+            ? record.alerts
+            : [];
+
+        if (recordAlerts.length) {
+            recordAlerts.forEach(message => {
                 statusWrapper.append(
                     makeElement("span", "warning", message)
                 );
@@ -113,7 +246,7 @@ function renderRecords(records) {
             );
         }
 
-        status.append(statusWrapper);
+        statusCell.append(statusWrapper);
 
         const values = [
             record.classroom,
@@ -129,8 +262,11 @@ function renderRecords(records) {
             row.append(makeElement("td", "", value));
         });
 
-        row.append(status);
-        row.append(makeElement("td", "", record.recorded_at));
+        row.append(statusCell);
+        row.append(
+            makeElement("td", "", record.recorded_at || "—")
+        );
+
         body.append(row);
     });
 
@@ -155,7 +291,14 @@ function renderRecords(records) {
     }
 }
 
-function updateChart(existingChart, canvasId, labels, values, label, color) {
+function updateChart(
+    existingChart,
+    canvasId,
+    labels,
+    values,
+    label,
+    color
+) {
     const canvas = $(canvasId);
 
     if (!canvas || typeof Chart === "undefined") {
@@ -239,19 +382,23 @@ function renderDashboard(data) {
         "#68aee8"
     );
 
-    renderAlerts(data.alerts || []);
+    renderAlerts(
+        data.alerts || [],
+        data.active_alerts
+    );
+
     renderInsights(data.insights || []);
     renderRecords(data.records || []);
 
+    const recordCount = (data.records || []).length;
+
     $("connectionStatus").textContent =
-        `Connected · ${data.records.length} records · ` +
+        `Connected · ${recordCount} displayed records · ` +
         `Dashboard refreshes every ${POLL_INTERVAL / 1000} seconds`;
 }
 
 async function refreshDashboard() {
-    if (refreshInProgress) {
-        return;
-    }
+    if (refreshInProgress) return;
 
     refreshInProgress = true;
 
@@ -268,6 +415,7 @@ async function refreshDashboard() {
         renderDashboard(data);
     } catch (error) {
         console.error("Dashboard update failed:", error);
+
         $("connectionStatus").textContent =
             "Connection problem. Retrying automatically...";
     } finally {

@@ -578,3 +578,206 @@ footer {
     background: #53665b;
     border-radius: 10px;
 }
+
+/* ==========================================
+   EcoCampus Smart Alerts: Status & Actions
+   ========================================== */
+
+.smart-alerts-section {
+    scroll-margin-top: 24px;
+}
+
+.smart-alerts-section .section-heading {
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.smart-alerts-section .section-heading h2 {
+    margin-bottom: 6px;
+}
+
+.smart-alerts-section .section-heading p {
+    margin-top: 0;
+}
+
+.alert-filters {
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    background: #f4f8f5;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+#alertsList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#alertsList .alert-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-left: 4px solid #d49a28;
+    border-radius: 10px;
+    background: #fff;
+}
+
+#alertsList .alert-item > div:first-child {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+#alertsList .alert-item strong {
+    display: inline-block;
+    margin-bottom: 5px;
+    overflow-wrap: anywhere;
+}
+
+#alertsList .alert-item p {
+    line-height: 1.7;
+}
+
+#alertsList .alert-item.severity-high {
+    border-left-color: var(--red);
+}
+
+#alertsList .alert-item.severity-medium {
+    border-left-color: #d49a28;
+}
+
+#alertsList .alert-item.status-acknowledged {
+    background: #fffaf0;
+}
+
+#alertsList .alert-item.status-resolved {
+    border-left-color: var(--green);
+    background: #f5fbf6;
+    opacity: 0.9;
+}
+
+.alert-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 7px 0;
+}
+
+.alert-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.alert-badge.severity-high {
+    color: #a52c2c;
+    background: #fff0f0;
+}
+
+.alert-badge.severity-medium {
+    color: #87570b;
+    background: #fff4dc;
+}
+
+.alert-badge.status-new {
+    color: #9b3c20;
+    background: #fff0e8;
+}
+
+.alert-badge.status-acknowledged {
+    color: #76500b;
+    background: #fff2cf;
+}
+
+.alert-badge.status-resolved {
+    color: #176b45;
+    background: #e6f6eb;
+}
+
+.alert-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+}
+
+.alert-actions form {
+    display: inline-flex;
+    margin: 0;
+}
+
+.alert-actions button {
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: white;
+    color: #33483a;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.alert-actions button:hover {
+    background: var(--green-light);
+    transform: translateY(-1px);
+}
+
+.alert-actions .acknowledge-button {
+    color: #76500b;
+    border-color: #e8d5a6;
+    background: #fffaf0;
+}
+
+.alert-actions .resolve-button {
+    color: white;
+    border-color: var(--green);
+    background: var(--green);
+}
+
+.alert-actions .resolve-button:hover {
+    background: var(--green-dark);
+}
+
+.alert-empty {
+    padding: 24px 16px;
+    border: 1px dashed #cbd9ce;
+    border-radius: 10px;
+    background: #f8fbf8;
+    color: var(--muted);
+    text-align: center;
+    font-size: 13px;
+}
+
+.alert-timestamp {
+    color: var(--muted);
+    font-size: 10px;
+}
+
+@media (max-width: 700px) {
+    #alertsList .alert-item {
+        padding: 13px;
+    }
+
+    #alertsList .alert-item > div:first-child {
+        flex-basis: 100%;
+    }
+
+    .alert-actions {
+        width: 100%;
+    }
+
+    .alert-actions button {
+        min-height: 36px;
+    }
+}

@@ -21,7 +21,6 @@
         <a href="#analytics">Analytics</a>
         <a href="#insights">Eco Insights</a>
 
-        </div>
     </aside>
 
     <main class="main">
@@ -123,15 +122,27 @@
             </div>
         </section>
 
-        <section id="alerts" class="panel">
-            <div class="section-heading">
-                <h2>Smart Alerts</h2>
-                <span id="alertBadge" class="count">0 alerts</span>
-            </div>
-            <div id="alertsList">
-                <p>Loading alerts...</p>
-            </div>
-        </section>
+
+<section id="alerts" class="panel smart-alerts-section">
+    <div class="section-heading">
+        <div>
+            <h2>⚠️ Smart Alerts</h2>
+            <p class="muted">
+                Monitor unusual consumption and track issue resolution.
+            </p>
+        </div>
+        <span id="alertBadge" class="count">0 active alerts</span>
+    </div>
+
+    <div class="alert-filters">
+        <span class="muted">Track each alert from detection to resolution.</span>
+    </div>
+
+    <div id="alertsList">
+        <p>Loading alerts...</p>
+    </div>
+</section>
+
 
         <section id="insights" class="panel">
             <h2>🌱 Sustainability Insights</h2>
