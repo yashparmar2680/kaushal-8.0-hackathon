@@ -124,6 +124,10 @@ Visit:
 - Add role-based access for administrators.
 - Introduce campus-wide sustainability goals and resource-saving recommendations.
 
+## 📸 Future System Working
+
+![EcoCampus System Working](screenshots/system-working.png)
+
 ## 🌿 Expected Impact
 
 EcoCampus aims to help educational institutions identify potential resource wastage, improve awareness of electricity and water consumption, and support data-informed sustainability decisions.
