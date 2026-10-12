@@ -1,0 +1,207 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoCampus | Sustainability Dashboard</title>
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <h2>🌿 EcoCampus</h2>
+        <p>SMART SUSTAINABILITY</p>
+        <a href="#overview">Overview</a>
+        <a href="#record">Record Usage</a>
+        <a href="#alerts">Smart Alerts</a>
+        <a href="#analytics">Analytics</a>
+        <a href="#insights">Eco Insights</a>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">CAMPUS RESOURCE MANAGEMENT</p>
+                <h1>Sustainability Dashboard</h1>
+                <p>Monitor resources. Detect wastage. Create impact.</p>
+            </div>
+            <span class="pill">● Demo Environment</span>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}
+            <div class="notice {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endwith %}
+
+        <section id="overview">
+            <h2>Campus Overview</h2>
+            <div class="cards">
+                <article class="card">
+                    <span>⚡ Electricity Used</span>
+                    <h2>{{ "%.1f"|format(electricity) }} <small>kWh</small></h2>
+                    <p>Total of recorded entries</p>
+                </article>
+                <article class="card">
+                    <span>💧 Water Used</span>
+                    <h2>{{ "%.0f"|format(water) }} <small>litres</small></h2>
+                    <p>Total of recorded entries</p>
+                </article>
+                <article class="card">
+                    <span>⚠️ Potential Issues</span>
+                    <h2>{{ alerts|length }}</h2>
+                    <p>Alerts across all records</p>
+                </article>
+                <article class="card">
+                    <span>🌱 Estimated Savings</span>
+                    <h2>{{ "%.1f"|format(saved) }}</h2>
+                    <p>Net units vs baseline; see breakdown</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="record" class="panel">
+            <h2>Record Resource Consumption</h2>
+            <p class="muted">Enter measured usage and the expected baseline for that period.</p>
+
+            <form action="{{ url_for('add_record') }}" method="POST"
+                  class="resource-form">
+                <label>
+                    Classroom
+                    <input name="classroom" placeholder="e.g. Room 204"
+                           maxlength="80" required>
+                </label>
+
+                <label>
+                    Resource
+                    <select name="resource" id="resource" required>
+                        <option value="Electricity">Electricity (kWh)</option>
+                        <option value="Water">Water (litres)</option>
+                    </select>
+                </label>
+
+                <label>
+                    Consumption
+                    <input type="number" name="amount" min="0"
+                           max="1000000" step="0.01" required>
+                </label>
+
+                <label>
+                    Expected baseline
+                    <input type="number" name="baseline" min="0.01"
+                           max="1000000" step="0.01" required>
+                </label>
+
+                <label>
+                    Classroom status
+                    <select name="occupied">
+                        <option value="yes">Occupied</option>
+                        <option value="no">Empty</option>
+                    </select>
+                </label>
+
+                <button type="submit">+ Add Record</button>
+            </form>
+        </section>
+
+        <section id="analytics" class="two-column">
+            <article class="panel">
+                <h2>Classroom Comparison</h2>
+                <p class="muted">Recorded totals, not live sensor data.</p>
+                <canvas id="classroomChart"></canvas>
+            </article>
+            <article class="panel">
+                <h2>Baseline Impact</h2>
+                <p class="muted">Positive means below baseline; negative means above.</p>
+                <div class="impact-row">
+                    <span>Electricity</span>
+                    <strong>{{ "%.1f"|format(electricity_saved) }} kWh</strong>
+                </div>
+                <div class="impact-row">
+                    <span>Water</span>
+                    <strong>{{ "%.1f"|format(water_saved) }} litres</strong>
+                </div>
+                <p class="muted">
+                    Estimates assume each entered baseline applies to its
+                    corresponding consumption record.
+                </p>
+            </article>
+        </section>
+
+        <section id="alerts" class="panel">
+            <h2>Smart Alerts <span class="count">{{ alerts|length }}</span></h2>
+            {% if alerts %}
+                {% for alert in alerts %}
+                    <div class="alert-item">
+                        <div>
+                            <strong>{{ alert.classroom }}</strong>
+                            <p>{{ alert.resource }} · {{ alert.recorded_at }}</p>
+                        </div>
+                        <span class="warning">{{ alert.message }}</span>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>No alerts detected in the current records.</p>
+            {% endif %}
+        </section>
+
+        <section id="insights" class="panel">
+            <h2>🌱 Sustainability Insights</h2>
+            {% if insights %}
+                {% for insight in insights %}
+                    <div class="insight">💡 {{ insight }}</div>
+                {% endfor %}
+            {% else %}
+                <p>No specific recommendations yet. Add more records to begin.</p>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <h2>Recent Resource Records</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Classroom</th>
+                            <th>Resource</th>
+                            <th>Usage</th>
+                            <th>Baseline</th>
+                            <th>Status</th>
+                            <th>Recorded At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in records %}
+                        <tr>
+                            <td>{{ r.classroom }}</td>
+                            <td>{{ r.resource }}</td>
+                            <td>{{ r.amount }} {{ "kWh" if r.resource == "Electricity" else "L" }}</td>
+                            <td>{{ r.baseline }}</td>
+                            <td>
+                                {% if r.alerts %}
+                                    <span class="warning">{{ r.alerts|join(", ") }}</span>
+                                {% else %}
+                                    <span class="good">Within baseline</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ r.recorded_at }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6">No records available.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer>EcoCampus · KAUSHAL 8.0 · PS-04 · Demo data, not live metering</footer>
+    </main>
+
+    <script>
+        const classrooms = {{ classrooms | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
