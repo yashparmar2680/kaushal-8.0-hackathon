@@ -99,6 +99,14 @@ Visit:
 
 [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
+## 📸 Project Screenshots
+
+### Dashboard
+![EcoCampus Dashboard](screenshots/dashboard.png)
+
+### Smart Alerts
+![EcoCampus Smart Alerts](screenshots/smart-alerts.png)
+
 ## 🧪 Current MVP Scope
 
 - Demonstrates classroom electricity and water monitoring.
@@ -115,6 +123,10 @@ Visit:
 - Estimate carbon emissions using a documented, configurable emissions factor.
 - Add role-based access for administrators.
 - Introduce campus-wide sustainability goals and resource-saving recommendations.
+
+## 📸 Future System Working
+
+![EcoCampus System Working](screenshots/system-working.png)
 
 ## 🌿 Expected Impact
 
