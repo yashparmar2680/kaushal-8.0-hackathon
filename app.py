@@ -8,7 +8,7 @@ import random
 import threading
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
 app = Flask(__name__)
 app.secret_key = "change-this-before-deployment"
@@ -27,6 +27,10 @@ simulation_lock = threading.Lock()
 simulation_started = False
 
 
+# --------------------------------------------------
+# TIME AND DATABASE HELPERS
+# --------------------------------------------------
+
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -44,6 +48,8 @@ def get_db():
 
 def init_db():
     with get_db() as db:
+
+        # Current dashboard readings and manual entries.
         db.execute("""
             CREATE TABLE IF NOT EXISTS resources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +62,7 @@ def init_db():
             )
         """)
 
+        # Alert history.
         db.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,14 +83,39 @@ def init_db():
             )
         """)
 
-        # Extra protection against duplicate open alerts.
+        # Historical readings for reports and graphs.
+        # Each simulation cycle adds a new snapshot here.
         db.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS
-            unique_open_alert
+            CREATE TABLE IF NOT EXISTS resource_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                classroom TEXT NOT NULL,
+                resource TEXT NOT NULL,
+                amount REAL NOT NULL,
+                baseline REAL NOT NULL,
+                occupied INTEGER NOT NULL DEFAULT 1,
+                recorded_at TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'simulation'
+            )
+        """)
+
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_history_time
+            ON resource_history(recorded_at)
+        """)
+
+        db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_history_resource_time
+            ON resource_history(resource, recorded_at)
+        """)
+
+        # Prevent duplicate open alerts for the same issue.
+        db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS unique_open_alert
             ON alerts(classroom, resource, alert_type)
             WHERE status IN ('New', 'Acknowledged')
         """)
 
+        # Add demonstration records only if resources is empty.
         count = db.execute(
             "SELECT COUNT(*) FROM resources"
         ).fetchone()[0]
@@ -91,27 +123,57 @@ def init_db():
         if count == 0:
             samples = [
                 ("Room 101", "Electricity", 18, 12, 1,
-                 "2026-10-10 09:00"),
+                 "2026-10-10 09:00:00"),
                 ("Room 102", "Electricity", 8, 12, 1,
-                 "2026-10-10 10:00"),
+                 "2026-10-10 10:00:00"),
                 ("Room 103", "Electricity", 15, 10, 0,
-                 "2026-10-10 11:00"),
+                 "2026-10-10 11:00:00"),
                 ("Room 101", "Water", 420, 500, 1,
-                 "2026-10-10 12:00"),
+                 "2026-10-10 12:00:00"),
                 ("Room 102", "Water", 750, 500, 1,
-                 "2026-10-11 10:00"),
+                 "2026-10-11 10:00:00"),
                 ("Room 103", "Water", 350, 500, 1,
-                 "2026-10-11 12:00"),
+                 "2026-10-11 12:00:00"),
                 ("Room 101", "Electricity", 10, 12, 1,
-                 "2026-10-12 09:00"),
+                 "2026-10-12 09:00:00"),
             ]
 
             db.executemany("""
-                INSERT INTO resources
-                (classroom, resource, amount, baseline,
-                 occupied, recorded_at)
+                INSERT INTO resources (
+                    classroom, resource, amount, baseline,
+                    occupied, recorded_at
+                )
                 VALUES (?, ?, ?, ?, ?, ?)
             """, samples)
+
+        # One-time migration of existing records into history.
+        # This does not delete or alter existing records.
+        history_count = db.execute(
+            "SELECT COUNT(*) FROM resource_history"
+        ).fetchone()[0]
+
+        if history_count == 0:
+            existing_rows = db.execute("""
+                SELECT classroom, resource, amount, baseline,
+                       occupied, recorded_at
+                FROM resources
+            """).fetchall()
+
+            for row in existing_rows:
+                db.execute("""
+                    INSERT INTO resource_history (
+                        classroom, resource, amount, baseline,
+                        occupied, recorded_at, source
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'existing')
+                """, (
+                    row["classroom"],
+                    row["resource"],
+                    row["amount"],
+                    row["baseline"],
+                    row["occupied"],
+                    row["recorded_at"]
+                ))
 
 
 # --------------------------------------------------
@@ -122,19 +184,15 @@ def detect_issues(row):
     issues = []
 
     if row["amount"] > row["baseline"]:
+        severity = (
+            "High"
+            if row["amount"] > row["baseline"] * 1.25
+            else "Medium"
+        )
+
         if row["resource"] == "Electricity":
-            severity = (
-                "High"
-                if row["amount"] > row["baseline"] * 1.25
-                else "Medium"
-            )
             message = "Electricity consumption above baseline"
         else:
-            severity = (
-                "High"
-                if row["amount"] > row["baseline"] * 1.25
-                else "Medium"
-            )
             message = "Water consumption above baseline"
 
         issues.append({
@@ -161,27 +219,16 @@ def detect_issues(row):
 
 
 # --------------------------------------------------
-# DUPLICATE-PROOF ALERT SYNCHRONIZATION
+# ALERT SYNCHRONIZATION
 # --------------------------------------------------
 
 def sync_alerts_for_readings(rows):
-    """
-    Create an alert if no open alert exists for the same
-    classroom, resource and alert type.
-
-    If an open alert already exists, update its latest
-    reading instead of inserting another alert.
-
-    Resolved alerts remain in history. A recurrence creates
-    a new alert.
-    """
     timestamp = now()
 
     with get_db() as db:
         for row in rows:
-            issues = detect_issues(row)
+            for issue in detect_issues(row):
 
-            for issue in issues:
                 existing = db.execute("""
                     SELECT id
                     FROM alerts
@@ -214,7 +261,6 @@ def sync_alerts_for_readings(rows):
                         timestamp,
                         existing["id"]
                     ))
-
                 else:
                     db.execute("""
                         INSERT INTO alerts (
@@ -239,7 +285,6 @@ def sync_alerts_for_readings(rows):
 
 
 def sync_latest_resource_alerts():
-    """Initialize alerts from the latest reading per room/resource."""
     with get_db() as db:
         rows = db.execute("""
             SELECT r.*
@@ -256,7 +301,6 @@ def sync_latest_resource_alerts():
 
 # --------------------------------------------------
 # AUTOMATIC SIMULATION
-# Updates existing simulated rows
 # --------------------------------------------------
 
 def generate_simulated_readings():
@@ -265,6 +309,7 @@ def generate_simulated_readings():
 
     with get_db() as db:
         for classroom in SIMULATED_CLASSROOMS:
+
             occupied = random.choices(
                 [1, 0], weights=[75, 25]
             )[0]
@@ -295,18 +340,23 @@ def generate_simulated_readings():
             ]
 
             for resource, amount, baseline in values:
+
+                # Keep the latest reading in resources for the dashboard.
                 existing = db.execute("""
                     SELECT id
                     FROM resources
                     WHERE classroom = ? AND resource = ?
-                    ORDER BY id DESC LIMIT 1
+                    ORDER BY id DESC
+                    LIMIT 1
                 """, (classroom, resource)).fetchone()
 
                 if existing:
                     db.execute("""
                         UPDATE resources
-                        SET amount = ?, baseline = ?,
-                            occupied = ?, recorded_at = ?
+                        SET amount = ?,
+                            baseline = ?,
+                            occupied = ?,
+                            recorded_at = ?
                         WHERE id = ?
                     """, (
                         amount, baseline, occupied,
@@ -327,6 +377,18 @@ def generate_simulated_readings():
                     ))
                     record_id = cursor.lastrowid
 
+                # Always append a separate historical snapshot.
+                db.execute("""
+                    INSERT INTO resource_history (
+                        classroom, resource, amount, baseline,
+                        occupied, recorded_at, source
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'simulation')
+                """, (
+                    classroom, resource, amount, baseline,
+                    occupied, timestamp
+                ))
+
                 readings.append({
                     "id": record_id,
                     "classroom": classroom,
@@ -339,12 +401,13 @@ def generate_simulated_readings():
 
     sync_alerts_for_readings(readings)
 
-    print(f"[SIMULATION] Updated readings at {timestamp}")
+    print(f"[SIMULATION] Saved historical snapshots at {timestamp}")
 
 
 def simulation_worker():
     while True:
         time.sleep(SIMULATION_INTERVAL)
+
         try:
             generate_simulated_readings()
         except Exception:
@@ -357,6 +420,7 @@ def start_simulation():
     with simulation_lock:
         if simulation_started:
             return
+
         simulation_started = True
 
     threading.Thread(
@@ -367,7 +431,7 @@ def start_simulation():
 
 
 # --------------------------------------------------
-# INSIGHTS
+# EXISTING SUSTAINABILITY INSIGHTS
 # --------------------------------------------------
 
 def get_insights(rows):
@@ -383,6 +447,7 @@ def get_insights(rows):
                 f"{row['classroom']}: check lights, fans "
                 "and AC when the classroom is empty."
             )
+
         elif row["amount"] > row["baseline"]:
             if row["resource"] == "Electricity":
                 insights.append(
@@ -399,7 +464,7 @@ def get_insights(rows):
 
 
 # --------------------------------------------------
-# BUILD DASHBOARD
+# BUILD EXISTING DASHBOARD
 # --------------------------------------------------
 
 def build_dashboard():
@@ -439,6 +504,7 @@ def build_dashboard():
         r["amount"] for r in all_records
         if r["resource"] == "Electricity"
     )
+
     water = sum(
         r["amount"] for r in all_records
         if r["resource"] == "Water"
@@ -448,6 +514,7 @@ def build_dashboard():
         r["baseline"] - r["amount"] for r in all_records
         if r["resource"] == "Electricity"
     )
+
     water_saved = sum(
         r["baseline"] - r["amount"] for r in all_records
         if r["resource"] == "Water"
@@ -457,6 +524,7 @@ def build_dashboard():
 
     for r in all_records:
         name = r["classroom"]
+
         if name not in classroom_map:
             classroom_map[name] = {
                 "classroom": name,
@@ -469,11 +537,8 @@ def build_dashboard():
             if r["resource"] == "Electricity"
             else "water"
         )
-        classroom_map[name][key] += r["amount"]
 
-    # Preserve a compatible list of current alert dictionaries.
-    for alert in alerts:
-        alert["recorded_at"] = alert["updated_at"]
+        classroom_map[name][key] += r["amount"]
 
     return {
         "records": records,
@@ -498,7 +563,248 @@ def build_dashboard():
 
 
 # --------------------------------------------------
-# PAGES AND API
+# REPORTING HELPERS
+# --------------------------------------------------
+
+REPORT_PERIODS = {
+    "1d": {
+        "days": 1,
+        "intervals": ["hourly"]
+    },
+    "7d": {
+        "days": 7,
+        "intervals": ["hourly", "daily"]
+    },
+    "30d": {
+        "days": 30,
+        "intervals": ["hourly", "daily", "weekly"]
+    }
+}
+
+
+def parse_timestamp(value):
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_bucket(timestamp, interval):
+    if interval == "hourly":
+        bucket = timestamp.replace(
+            minute=0, second=0, microsecond=0
+        )
+        label = bucket.strftime("%d %b %H:%M")
+
+    elif interval == "daily":
+        bucket = timestamp.date()
+        label = bucket.strftime("%d %b %Y")
+
+    else:
+        # ISO weeks begin on Monday.
+        bucket = (
+            timestamp.date()
+            - timedelta(days=timestamp.weekday())
+        )
+        label = f"Week of {bucket.strftime('%d %b %Y')}"
+
+    return bucket, label
+
+
+def aggregate_report_rows(rows, interval):
+    """
+    Aggregate readings as averages and peaks.
+
+    The simulator records snapshots, not consumption per interval.
+    Therefore, summing every snapshot would exaggerate consumption.
+    """
+    groups = {}
+
+    for row in rows:
+        timestamp = parse_timestamp(row["recorded_at"])
+
+        if timestamp is None:
+            continue
+
+        bucket, label = get_bucket(timestamp, interval)
+        key = (row["resource"], bucket)
+
+        if key not in groups:
+            groups[key] = {
+                "label": label,
+                "resource": row["resource"],
+                "amounts": [],
+                "baselines": [],
+                "above_baseline": 0,
+                "empty_electricity": 0
+            }
+
+        group = groups[key]
+
+        amount = float(row["amount"])
+        baseline = float(row["baseline"])
+
+        group["amounts"].append(amount)
+        group["baselines"].append(baseline)
+
+        if amount > baseline:
+            group["above_baseline"] += 1
+
+        if (
+            row["resource"] == "Electricity"
+            and int(row["occupied"]) == 0
+            and amount > 0
+        ):
+            group["empty_electricity"] += 1
+
+    result = {
+        "Electricity": [],
+        "Water": []
+    }
+
+    for (resource, bucket), group in sorted(
+        groups.items(),
+        key=lambda item: item[0][1]
+    ):
+        amounts = group["amounts"]
+        baselines = group["baselines"]
+
+        result[resource].append({
+            "label": group["label"],
+            "average": round(sum(amounts) / len(amounts), 2),
+            "baseline": round(
+                sum(baselines) / len(baselines), 2
+            ),
+            "peak": round(max(amounts), 2),
+            "readings": len(amounts),
+            "above_baseline": group["above_baseline"],
+            "empty_electricity": group["empty_electricity"]
+        })
+
+    return result
+
+
+def build_report(period):
+    settings = REPORT_PERIODS[period]
+    end_time = datetime.now()
+    start_time = end_time - timedelta(days=settings["days"])
+
+    with get_db() as db:
+        rows = db.execute("""
+            SELECT *
+            FROM resource_history
+            WHERE recorded_at >= ?
+              AND recorded_at <= ?
+            ORDER BY recorded_at ASC, id ASC
+        """, (
+            start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            end_time.strftime("%Y-%m-%d %H:%M:%S")
+        )).fetchall()
+
+    history = [dict(row) for row in rows]
+
+    summaries = {}
+    classroom_summaries = {}
+
+    for resource in ("Electricity", "Water"):
+        resource_rows = [
+            row for row in history
+            if row["resource"] == resource
+        ]
+
+        amounts = [float(row["amount"]) for row in resource_rows]
+        baselines = [
+            float(row["baseline"]) for row in resource_rows
+        ]
+
+        summaries[resource] = {
+            "reading_count": len(resource_rows),
+            "average": (
+                round(sum(amounts) / len(amounts), 2)
+                if amounts else None
+            ),
+            "peak": round(max(amounts), 2) if amounts else None,
+            "average_baseline": (
+                round(sum(baselines) / len(baselines), 2)
+                if baselines else None
+            ),
+            "above_baseline_count": sum(
+                1 for row in resource_rows
+                if row["amount"] > row["baseline"]
+            ),
+            "empty_classroom_readings": sum(
+                1 for row in resource_rows
+                if (
+                    resource == "Electricity"
+                    and int(row["occupied"]) == 0
+                    and row["amount"] > 0
+                )
+            )
+        }
+
+        for classroom in sorted({
+            row["classroom"] for row in resource_rows
+        }):
+            classroom_rows = [
+                row for row in resource_rows
+                if row["classroom"] == classroom
+            ]
+
+            values = [
+                float(row["amount"]) for row in classroom_rows
+            ]
+
+            classroom_summaries.setdefault(classroom, {})
+
+            classroom_summaries[classroom][resource] = {
+                "reading_count": len(values),
+                "average": round(sum(values) / len(values), 2),
+                "peak": round(max(values), 2)
+            }
+
+    intervals = {}
+
+    for interval in settings["intervals"]:
+        intervals[interval] = aggregate_report_rows(
+            history, interval
+        )
+
+    source_counts = {
+        "simulation": sum(
+            1 for row in history
+            if row["source"] == "simulation"
+        ),
+        "manual": sum(
+            1 for row in history
+            if row["source"] == "manual"
+        ),
+        "existing": sum(
+            1 for row in history
+            if row["source"] == "existing"
+        )
+    }
+
+    return {
+        "period": period,
+        "period_days": settings["days"],
+        "from": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "to": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "reading_count": len(history),
+        "data_available": bool(history),
+        "intervals": intervals,
+        "summaries": summaries,
+        "classrooms": classroom_summaries,
+        "source_counts": source_counts,
+        "note": (
+            "Simulated readings are demonstrations, not live sensor "
+            "measurements. Values are snapshots; averages and peaks "
+            "are reported instead of summing repeated snapshots."
+        )
+    }
+
+
+# --------------------------------------------------
+# DASHBOARD PAGE AND API
 # --------------------------------------------------
 
 @app.route("/")
@@ -513,6 +819,28 @@ def index():
 def dashboard_api():
     response = jsonify(build_dashboard())
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# --------------------------------------------------
+# REPORT API
+# --------------------------------------------------
+
+@app.route("/api/report")
+def report_api():
+    period = request.args.get("period", "1d").strip().lower()
+
+    if period not in REPORT_PERIODS:
+        return jsonify({
+            "error": "Invalid report period.",
+            "allowed_periods": list(REPORT_PERIODS.keys())
+        }), 400
+
+    report = build_report(period)
+
+    response = jsonify(report)
+    response.headers["Cache-Control"] = "no-store"
+
     return response
 
 
@@ -555,6 +883,7 @@ def resolve_alert(alert_id):
 
         if alert["status"] != "Resolved":
             timestamp = now()
+
             db.execute("""
                 UPDATE alerts
                 SET status = 'Resolved',
@@ -600,6 +929,7 @@ def add_record():
             or not 0 < baseline <= 1_000_000
         ):
             raise ValueError
+
     except (ValueError, TypeError):
         flash(
             "Enter valid consumption and baseline values.",
@@ -622,6 +952,18 @@ def add_record():
             occupied, timestamp
         ))
 
+        # Save manual readings to report history too.
+        db.execute("""
+            INSERT INTO resource_history (
+                classroom, resource, amount, baseline,
+                occupied, recorded_at, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'manual')
+        """, (
+            classroom, resource, amount, baseline,
+            occupied, timestamp
+        ))
+
         reading = {
             "id": cursor.lastrowid,
             "classroom": classroom,
@@ -639,7 +981,7 @@ def add_record():
 
 
 # --------------------------------------------------
-# RUN
+# RUN APPLICATION
 # --------------------------------------------------
 
 if __name__ == "__main__":

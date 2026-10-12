@@ -781,3 +781,59 @@ footer {
         min-height: 36px;
     }
 }
+
+/* Sustainability Reports */
+
+.report-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.report-controls label {
+    font-weight: 600;
+}
+
+.report-controls select,
+.report-controls button,
+#downloadReportButton {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font: inherit;
+}
+
+.report-chart-container {
+    position: relative;
+    width: 100%;
+    height: 300px;
+}
+
+.report-summary {
+    margin: 20px 0;
+}
+
+.report-charts {
+    margin: 20px 0;
+}
+
+#reports h3 {
+    margin-top: 24px;
+}
+
+#downloadReportButton {
+    margin-top: 18px;
+    cursor: pointer;
+}
+
+@media (max-width: 700px) {
+    .report-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .report-chart-container {
+        height: 250px;
+    }
+}

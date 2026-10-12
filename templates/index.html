@@ -19,6 +19,7 @@
         <a href="#record">Manual Entry</a>
         <a href="#alerts">Smart Alerts</a>
         <a href="#analytics">Analytics</a>
+        <a href="#reports">Sustainability Reports</a>
         <a href="#insights">Eco Insights</a>
 
     </aside>
@@ -142,6 +143,114 @@
         <p>Loading alerts...</p>
     </div>
 </section>
+
+<!-- SUSTAINABILITY REPORTS -->
+<section id="reports" class="panel">
+    <div class="section-heading">
+        <div>
+            <h2>📊 Sustainability Reports</h2>
+            <p class="muted">
+                Explore recorded resource readings and usage trends.
+                Simulated readings are for demonstration purposes.
+            </p>
+        </div>
+    </div>
+
+    <div class="report-controls">
+        <label for="reportPeriod">Report period</label>
+        <select id="reportPeriod">
+            <option value="1d">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+        </select>
+
+        <button type="button" id="loadReportButton">
+            Generate Report
+        </button>
+    </div>
+
+    <p id="reportStatus" class="muted" aria-live="polite">
+        Select a period and generate your report.
+    </p>
+
+    <div class="cards report-summary">
+        <article class="card">
+            <span>📈 Electricity Average</span>
+            <h2 id="reportElectricityAverage">—</h2>
+            <p>kWh per reading</p>
+        </article>
+
+        <article class="card">
+            <span>💧 Water Average</span>
+            <h2 id="reportWaterAverage">—</h2>
+            <p>Litres per reading</p>
+        </article>
+
+        <article class="card">
+            <span>📋 Recorded Readings</span>
+            <h2 id="reportReadingCount">—</h2>
+            <p>Readings in selected period</p>
+        </article>
+
+        <article class="card">
+            <span>⚠️ Above Baseline</span>
+            <h2 id="reportAboveBaseline">—</h2>
+            <p>Readings above expected usage</p>
+        </article>
+    </div>
+
+    <div class="two-column report-charts">
+        <article class="panel">
+            <h3>⚡ Electricity Usage Trend</h3>
+            <p class="muted">
+                Average recorded reading compared with baseline.
+            </p>
+            <div class="report-chart-container">
+                <canvas id="reportElectricityChart"></canvas>
+            </div>
+        </article>
+
+        <article class="panel">
+            <h3>💧 Water Usage Trend</h3>
+            <p class="muted">
+                Average recorded reading compared with baseline.
+            </p>
+            <div class="report-chart-container">
+                <canvas id="reportWaterChart"></canvas>
+            </div>
+        </article>
+    </div>
+
+    <h3>Classroom Report</h3>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Classroom</th>
+                    <th>Electricity Average</th>
+                    <th>Electricity Peak</th>
+                    <th>Water Average</th>
+                    <th>Water Peak</th>
+                </tr>
+            </thead>
+            <tbody id="reportClassroomBody">
+                <tr>
+                    <td colspan="5">Generate a report to view classroom data.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Report Notes</h3>
+    <p id="reportNotes" class="muted">
+        Report statistics will appear here.
+    </p>
+
+    <button type="button" id="downloadReportButton">
+        Download Report as CSV
+    </button>
+</section>
+<!-- END SUSTAINABILITY REPORTS -->
 
 
         <section id="insights" class="panel">

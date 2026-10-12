@@ -427,3 +427,404 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshDashboard();
     setInterval(refreshDashboard, POLL_INTERVAL);
 });
+
+/* =========================================
+   ECOPCAMPUS SUSTAINABILITY REPORTS
+   ========================================= */
+
+let reportElectricityChartInstance = null;
+let reportWaterChartInstance = null;
+let latestSustainabilityReport = null;
+
+async function loadSustainabilityReport() {
+    const periodElement = document.getElementById("reportPeriod");
+    const statusElement = document.getElementById("reportStatus");
+
+    if (!periodElement || !statusElement) {
+        return;
+    }
+
+    const period = periodElement.value;
+
+    statusElement.textContent = "Generating sustainability report...";
+
+    const loadButton = document.getElementById("loadReportButton");
+    if (loadButton) loadButton.disabled = true;
+
+    try {
+        const response = await fetch(
+            `/api/report?period=${encodeURIComponent(period)}`,
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+
+        const data = await response.json();
+        latestSustainabilityReport = data;
+
+        renderSustainabilityReport(data);
+
+        statusElement.textContent = data.data_available
+            ? `Report generated for the selected period.`
+            : "No readings found for this period. Try another period.";
+
+    } catch (error) {
+        console.error("Sustainability report error:", error);
+        statusElement.textContent =
+            "Could not load the report. Check that Flask is running and try again.";
+    } finally {
+        if (loadButton) loadButton.disabled = false;
+    }
+}
+
+function formatReportNumber(value) {
+    const number = Number(value);
+
+    return Number.isFinite(number)
+        ? number.toLocaleString("en-IN", {
+            maximumFractionDigits: 2
+        })
+        : "0";
+}
+
+function renderSustainabilityReport(data) {
+    const electricity = data.summaries?.Electricity || {};
+    const water = data.summaries?.Water || {};
+
+    const electricityAverage =
+        document.getElementById("reportElectricityAverage");
+    const waterAverage =
+        document.getElementById("reportWaterAverage");
+    const readingCount =
+        document.getElementById("reportReadingCount");
+    const aboveBaseline =
+        document.getElementById("reportAboveBaseline");
+
+    if (electricityAverage) {
+        electricityAverage.textContent =
+            formatReportNumber(electricity.average);
+    }
+
+    if (waterAverage) {
+        waterAverage.textContent =
+            formatReportNumber(water.average);
+    }
+
+    if (readingCount) {
+        readingCount.textContent =
+            formatReportNumber(data.reading_count);
+    }
+
+    if (aboveBaseline) {
+        aboveBaseline.textContent = formatReportNumber(
+            (electricity.above_baseline_count || 0) +
+            (water.above_baseline_count || 0)
+        );
+    }
+
+    renderReportClassrooms(data.classrooms || {});
+    renderReportNotes(data);
+    renderSustainabilityCharts(data);
+}
+
+function renderReportClassrooms(classrooms) {
+    const tableBody =
+        document.getElementById("reportClassroomBody");
+
+    if (!tableBody) return;
+
+    tableBody.replaceChildren();
+
+    const roomNames = Object.keys(classrooms);
+
+    if (roomNames.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+
+        cell.colSpan = 5;
+        cell.textContent = "No classroom readings available.";
+
+        row.appendChild(cell);
+        tableBody.appendChild(row);
+        return;
+    }
+
+    roomNames.forEach((roomName) => {
+        const room = classrooms[roomName] || {};
+        const electricity = room.Electricity || {};
+        const water = room.Water || {};
+
+        const row = document.createElement("tr");
+
+        const values = [
+            roomName,
+            formatReportNumber(electricity.average) + " kWh",
+            formatReportNumber(electricity.peak) + " kWh",
+            formatReportNumber(water.average) + " L",
+            formatReportNumber(water.peak) + " L"
+        ];
+
+        values.forEach((value) => {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
+
+        tableBody.appendChild(row);
+    });
+}
+
+function renderReportNotes(data) {
+    const notesElement = document.getElementById("reportNotes");
+
+    if (!notesElement) return;
+
+    const notes = [];
+
+    if (data.note) {
+        notes.push(data.note);
+    }
+
+    notes.push(
+        `Readings included: ${formatReportNumber(data.reading_count)}.`
+    );
+
+    const sources = data.source_counts || {};
+    const simulated = sources.simulation || 0;
+    const manual = sources.manual || 0;
+    const existing = sources.existing || 0;
+
+    notes.push(
+        `Data sources — Simulated: ${simulated}, ` +
+        `Manual: ${manual}, Existing: ${existing}.`
+    );
+
+    notesElement.textContent = notes.join(" ");
+}
+
+function renderSustainabilityCharts(data) {
+    if (typeof Chart === "undefined") {
+        console.error("Chart.js is not loaded.");
+        return;
+    }
+
+    const period = data.period;
+    const intervals = data.intervals || {};
+
+    // Select the clearest time grouping for each report period.
+    let selectedIntervals;
+
+    if (period === "1d") {
+        selectedIntervals = intervals.hourly || {};
+    } else if (period === "7d") {
+        selectedIntervals = intervals.daily || intervals.hourly || {};
+    } else {
+        selectedIntervals = intervals.weekly || intervals.daily || {};
+    }
+
+    const electricityPoints = selectedIntervals.Electricity || [];
+    const waterPoints = selectedIntervals.Water || [];
+
+    const electricityCanvas =
+        document.getElementById("reportElectricityChart");
+    const waterCanvas =
+        document.getElementById("reportWaterChart");
+
+    if (electricityCanvas) {
+        if (reportElectricityChartInstance) {
+            reportElectricityChartInstance.destroy();
+        }
+
+        reportElectricityChartInstance = createSustainabilityChart(
+            electricityCanvas,
+            electricityPoints,
+            "Electricity (kWh)"
+        );
+    }
+
+    if (waterCanvas) {
+        if (reportWaterChartInstance) {
+            reportWaterChartInstance.destroy();
+        }
+
+        reportWaterChartInstance = createSustainabilityChart(
+            waterCanvas,
+            waterPoints,
+            "Water (litres)"
+        );
+    }
+}
+
+function createSustainabilityChart(canvas, points, label) {
+    return new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: points.map((point) => point.label),
+            datasets: [
+                {
+                    label: `Average ${label}`,
+                    data: points.map((point) => point.average),
+                    borderWidth: 2,
+                    tension: 0.25
+                },
+                {
+                    label: `Expected ${label}`,
+                    data: points.map((point) => point.baseline),
+                    borderWidth: 2,
+                    borderDash: [6, 5],
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: "index"
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: label
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: "bottom"
+                }
+            }
+        }
+    });
+}
+
+function downloadSustainabilityReportCSV() {
+    if (!latestSustainabilityReport) {
+        const status = document.getElementById("reportStatus");
+
+        if (status) {
+            status.textContent =
+                "Generate a report before downloading the CSV.";
+        }
+
+        return;
+    }
+
+    const data = latestSustainabilityReport;
+    const rows = [
+        ["EcoCampus Sustainability Report"],
+        ["Period", data.period],
+        ["From", data.from],
+        ["To", data.to],
+        [],
+        [
+            "Classroom",
+            "Electricity Average (kWh)",
+            "Electricity Peak (kWh)",
+            "Water Average (litres)",
+            "Water Peak (litres)"
+        ]
+    ];
+
+    Object.entries(data.classrooms || {}).forEach(([roomName, room]) => {
+        const electricity = room.Electricity || {};
+        const water = room.Water || {};
+
+        rows.push([
+            roomName,
+            electricity.average ?? 0,
+            electricity.peak ?? 0,
+            water.average ?? 0,
+            water.peak ?? 0
+        ]);
+    });
+
+    rows.push(
+        [],
+        ["Total readings", data.reading_count ?? 0],
+        [
+            "Electricity average (kWh)",
+            data.summaries?.Electricity?.average ?? 0
+        ],
+        [
+            "Water average (litres)",
+            data.summaries?.Water?.average ?? 0
+        ],
+        [
+            "Readings above baseline",
+            (data.summaries?.Electricity?.above_baseline_count || 0) +
+            (data.summaries?.Water?.above_baseline_count || 0)
+        ],
+        [],
+        ["Report note", data.note || ""]
+    );
+
+    const csv = rows.map((row) =>
+        row.map((value) => {
+            const safeValue = String(value ?? "");
+            return `"${safeValue.replace(/"/g, '""')}"`;
+        }).join(",")
+    ).join("\r\n");
+
+    const blob = new Blob(["\uFEFF" + csv], {
+        type: "text/csv;charset=utf-8;"
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `ecocampus-report-${data.period}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+}
+
+// Connect only the new report controls.
+document.addEventListener("DOMContentLoaded", () => {
+    const loadButton = document.getElementById("loadReportButton");
+    const downloadButton =
+        document.getElementById("downloadReportButton");
+    const periodSelect = document.getElementById("reportPeriod");
+
+    if (loadButton) {
+        loadButton.addEventListener(
+            "click",
+            loadSustainabilityReport
+        );
+    }
+
+    if (downloadButton) {
+        downloadButton.addEventListener(
+            "click",
+            downloadSustainabilityReportCSV
+        );
+    }
+
+    if (periodSelect) {
+        periodSelect.addEventListener(
+            "change",
+            loadSustainabilityReport
+        );
+    }
+
+    // Load the initial report when the page opens.
+    if (periodSelect) {
+        loadSustainabilityReport();
+    }
+});
