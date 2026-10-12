@@ -20,9 +20,7 @@
         <a href="#alerts">Smart Alerts</a>
         <a href="#analytics">Analytics</a>
         <a href="#insights">Eco Insights</a>
-        <div class="sidebar-note">
-            DEMO MODE<br>
-            <span>Simulated data only</span>
+
         </div>
     </aside>
 
@@ -41,13 +39,7 @@
             </div>
         </header>
 
-        <div class="simulation-banner">
-            <strong>ⓘ Simulation mode:</strong>
-            All automatically generated readings and occupancy statuses
-            are illustrative demo data, not actual campus measurements.
-            New readings are generated every 30 seconds while the Flask
-            application is running.
-        </div>
+
 
         <div id="connectionStatus" class="connection-status">
             Connecting to dashboard...
@@ -224,9 +216,7 @@
             </form>
         </section>
 
-        <footer>
-            EcoCampus · KAUSHAL 8.0 · PS-04 · Simulated demo data
-        </footer>
+
     </main>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>

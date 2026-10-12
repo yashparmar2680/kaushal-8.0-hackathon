@@ -534,3 +534,47 @@ footer {
         flex-direction: column;
     }
 }
+
+
+/* Compact Smart Alerts and Resource Records */
+
+.smart-alerts,
+.resource-records {
+    max-height: 280px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Keep table headings visible while scrolling */
+.resource-records thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #17251f;
+}
+
+/* Compact table rows */
+.resource-records th,
+.resource-records td {
+    padding: 8px 10px;
+    font-size: 12px;
+}
+
+/* Compact alert cards */
+.smart-alerts .alert-item {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+/* Slim scrollbar */
+.smart-alerts::-webkit-scrollbar,
+.resource-records::-webkit-scrollbar {
+    width: 5px;
+}
+
+.smart-alerts::-webkit-scrollbar-thumb,
+.resource-records::-webkit-scrollbar-thumb {
+    background: #53665b;
+    border-radius: 10px;
+}
